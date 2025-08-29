@@ -3,19 +3,47 @@ import struct
 import requests
 import ipaddress
 
+
 def main():
-    connection = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(3))
+    conn = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(3))
     while True:
-        data = connection.recv(65353)
-        dest_mac, src_mac, data= unpack_frame(data)
+        data = conn.recv(65535)
+        dest_mac, src_mac, data = unpack_frame(data)
         ver, protc, src_ip, dest_ip, data = unpack_ip(data)
-        print('-'*30, 'PACKET', '-' * 30)
-        print('\n')
-        print(f'{get_score(dest_ip)}')
-        print(f'{src_ip} ---> {dest_ip}')
-        print(f'{src_mac} ---> {dest_mac}',f'{protc}')
-        print('\n')
-        print('-' * 66)
+        if protc == "ICMP":
+            icmp_type, icmp_code, icmp_checksum = struct.unpack('!BBH', data[:4])
+            if icmp_type == 0:
+                icmp_type = 'Echo reply'
+            elif icmp_type == 3:
+                icmp_type = 'Destination unreachable'
+            elif icmp_type == 8:
+                icmp_type = 'Echo request'
+            elif icmp_type == 11:
+                icmp_type = 'Time exceeded'
+            else:
+                icmp_type = f'Unknown {icmp_type}'
+            print(f'{src_ip} ---> {dest_ip}: {protc}, {icmp_type}')
+
+        elif protc == 'TCP':
+
+            src_port, dest_port, seq_num, ack_num, head_resv_bits, window, = struct.unpack('!HHLLHH', data[:16])
+            offset = (head_resv_bits >> 12) * 4
+            flags = {}
+            flags["urg"] = (head_resv_bits & 32) >> 5
+            flags["ack"] = (head_resv_bits & 16) >> 4
+            flags["psh"] = (head_resv_bits & 8) >> 3
+            flags["rst"] = (head_resv_bits & 4) >> 2
+            flags["syn"] = (head_resv_bits & 2) >> 1
+            flags["fin"] = head_resv_bits & 1
+
+
+            print(f'{src_ip}:{src_port} ---> {dest_ip}:{dest_port}, seq {seq_num}, ack {ack_num}, flags [{f", ".join(i[0] for i in flags.items() if i[1]==1)}], window {window}, length {len(data[offset:])}')
+
+
+
+
+
+
 
 
 def unpack_frame(data):
@@ -43,7 +71,7 @@ def unpack_ip(data):
 def get_score(ip):
     if ipaddress.ip_address(ip).is_private:
         return 'Private IP'
-    api_key = '93f56cb498c0bbb52e4bcd7f4761b4a54975233c7b7c9f6c265d35941666032be94ce71f86c1940d'
+    api_key = 'YOUR API KEY' 
     url = f"https://api.abuseipdb.com/api/v2/check?ipAddress={ip}&maxAgeInDays=90"
     headers = {"Key": api_key, "Accept": "application/json"}
     try:
@@ -62,9 +90,12 @@ def get_score(ip):
         return "Request Failed"
 
 
+
+
+
+
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
         print("\n[+] Exiting ...")
-
