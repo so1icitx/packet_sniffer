@@ -2,6 +2,7 @@ import socket
 import struct
 import requests
 import ipaddress
+import datetime
 
 
 def main():
@@ -12,16 +13,20 @@ def main():
         ver, protc, src_ip, dest_ip, data = unpack_ip(data)
         if protc == "ICMP":
             icmp_type, icmp_code, icmp_checksum = struct.unpack('!BBH', data[:4])
-            if icmp_type == 0:
+           if icmp_type == 0:
                 icmp_type = 'Echo reply'
-            elif icmp_type == 3:
-                icmp_type = 'Destination unreachable'
+            elif icmp_type == 3 and icmp_code == 0:
+                icmp_type = 'Destination network unreachable'
+            elif icmp_type == 3 and icmp_code == 1:
+                icmp_type = 'Destination host unreachable'
+            elif icmp_type == 3 and icmp_code == 3:
+                icmp_type = 'Destination port unreachable'
             elif icmp_type == 8:
                 icmp_type = 'Echo request'
             elif icmp_type == 11:
-                icmp_type = 'Time exceeded'
+                icmp_type = 'TTL expired'
             else:
-                icmp_type = f'Unknown {icmp_type}'
+                icmp_type = f"Unkown: {icmp_type}"
             print(f'{src_ip} ---> {dest_ip}: {protc}, {icmp_type}')
 
         elif protc == 'TCP':
@@ -37,7 +42,7 @@ def main():
             flags["fin"] = head_resv_bits & 1
 
 
-            print(f'{src_ip}:{src_port} ---> {dest_ip}:{dest_port}, seq {seq_num}, ack {ack_num}, flags [{f", ".join(i[0] for i in flags.items() if i[1]==1)}], window {window}, length {len(data[offset:])}')
+            print(f'{datetime.datetime.now().strftime('%H:%M:%S.%f')} {src_ip}:{src_port} -> {dest_ip}:{dest_port}, Flags [{", ".join(f'{i}'for i in flags if flags[i] == 1)}]')
 
 
 
