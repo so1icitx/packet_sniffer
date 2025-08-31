@@ -4,16 +4,19 @@ import requests
 import ipaddress
 import datetime
 
+packets_counter = 0
 
 def main():
+    global packets_counter
     conn = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(3))
     while True:
+        packets_counter += 1
         data = conn.recv(65535)
         dest_mac, src_mac, data = unpack_frame(data)
         ver, protc, src_ip, dest_ip, data = unpack_ip(data)
         if protc == "ICMP":
             icmp_type, icmp_code, icmp_checksum = struct.unpack('!BBH', data[:4])
-           if icmp_type == 0:
+            if icmp_type == 0:
                 icmp_type = 'Echo reply'
             elif icmp_type == 3 and icmp_code == 0:
                 icmp_type = 'Destination network unreachable'
@@ -27,27 +30,24 @@ def main():
                 icmp_type = 'TTL expired'
             else:
                 icmp_type = f"Unkown: {icmp_type}"
-            print(f'{src_ip} ---> {dest_ip}: {protc}, {icmp_type}')
+            print(f'{datetime.datetime.now().strftime('%H:%M:%S.%f')} {src_ip} -> {dest_ip}: {protc}, {icmp_type}')
 
         elif protc == 'TCP':
 
-            src_port, dest_port, seq_num, ack_num, head_resv_bits, window, = struct.unpack('!HHLLHH', data[:16])
-            offset = (head_resv_bits >> 12) * 4
+            src_port, dest_port, seq_num, ack_num, head_res_flags, window, = struct.unpack('!HHLLHH', data[:16])
+            offset = (head_res_flags >> 12) * 4
             flags = {}
-            flags["urg"] = (head_resv_bits & 32) >> 5
-            flags["ack"] = (head_resv_bits & 16) >> 4
-            flags["psh"] = (head_resv_bits & 8) >> 3
-            flags["rst"] = (head_resv_bits & 4) >> 2
-            flags["syn"] = (head_resv_bits & 2) >> 1
-            flags["fin"] = head_resv_bits & 1
-
+            flags["URG"] = (head_res_flags & 32) >> 5
+            flags['ACK'] = (head_res_flags & 16) >> 4
+            flags['PSH'] = (head_res_flags & 8) >> 3
+            flags['RST'] = (head_res_flags & 4) >> 2
+            flags['SYN'] = (head_res_flags & 2) >> 1
+            flags['FIN'] = head_res_flags & 1
 
             print(f'{datetime.datetime.now().strftime('%H:%M:%S.%f')} {src_ip}:{src_port} -> {dest_ip}:{dest_port}, Flags [{", ".join(f'{i}'for i in flags if flags[i] == 1)}]')
-
-
-
-
-
+        elif protc == 'UDP':
+            src_port , dest_port, length = struct.unpack('!HHH', data[:6])
+            print(f'{datetime.datetime.now().strftime('%H:%M:%S.%f')} {src_ip}:{src_port} -> {dest_ip}:{dest_port} length {length}')
 
 
 
@@ -76,7 +76,7 @@ def unpack_ip(data):
 def get_score(ip):
     if ipaddress.ip_address(ip).is_private:
         return 'Private IP'
-    api_key = 'YOUR API KEY' 
+    api_key = 'API KEY'
     url = f"https://api.abuseipdb.com/api/v2/check?ipAddress={ip}&maxAgeInDays=90"
     headers = {"Key": api_key, "Accept": "application/json"}
     try:
@@ -96,11 +96,8 @@ def get_score(ip):
 
 
 
-
-
-
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n[+] Exiting ...")
+        print(f"\npackets received: {packets_counter}")
