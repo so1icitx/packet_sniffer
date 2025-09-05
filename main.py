@@ -4,17 +4,24 @@ import struct
 import ipaddress
 import datetime
 import argparse
+import json
+import csv
 
 packets_received = 0
+main_row = 0
 
 def main():
     global packets_received
+    global main_row
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--protocol', choices=['all', 'tcp', 'udp', 'icmp'], default='all')
     parser.add_argument('-i', '--interface',default='all')
+    parser.add_argument('-f', '--file', choices=['csv', 'json', 'txt'], default='no')
+    parser.add_argument('-n', '--name', help='you can add paths example( -n /folder/tcp_01.json)')
+    # future idea cuz cant get it to work right now lol
     # parser.add_argument('-X', '--hex-dump', action='store_true')
-    parser.add_argument('-a', '--abuse-check', action='store_true', help='Enable AbuseIPDB lookup for destination IP abuse score, don\'t forget to add your api key')
+    parser.add_argument('-a', '--abuse-check', action='store_true', help='Enable AbuseIPDB lookup for destination IP abuse score')
     args = parser.parse_args()
 
     connection = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(3))
@@ -39,8 +46,30 @@ def main():
             src_port, dest_port, seq_num, ack_num, window_size, flags, data = unpack_tcp(data)
             if args.abuse_check == True:
                 print(get_score(dest_ip))
-            print(f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} Flags[{flags}], ack {ack_num}, win {window_size}, length {len(data)} ')
+            print(f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} TCP Flags[{flags}], ack {ack_num}, win {window_size}, length {len(data)} ')
+            if args.file == 'no':
+                pass
+            elif args.file == 'json':
+                data = {
+                    'time':datetime.datetime.now().strftime("%H:%M:%S.%f"),
+                    'src_ip':src_ip,
+                    'src_port':src_port,
+                    'dest_ip':dest_ip,
+                    'dest_port':dest_port,
+                    'flags':flags,
+                    'ack_number':ack_num,
+                    'window_size':window_size,
+                    'length':len(data)
+                    }
+                write_file(data, args.file, args.name)
 
+            elif args.file == 'csv':
+                main_row += 1
+                data = [['time', 'src_ip', 'src_port', 'dest_ip', 'dest_port', 'flags', 'ack_num', 'win_size', 'length'], [datetime.datetime.now().strftime("%H:%M:%S.%f"), src_ip, src_port, dest_ip, dest_port, flags, ack_num, window_size, len(data)]]
+                write_file(data, args.file, args.name, main_row)
+            else:
+                data = f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} TCP Flags[{flags}], ack {ack_num}, win {window_size}, length {len(data)}'
+                write_file(data, args.file, args.name)
 
 
         elif protc == 'UDP' and args.protocol.upper() == 'UDP' or args.protocol == 'all':
@@ -49,6 +78,25 @@ def main():
             if args.abuse_check == True:
                 print(get_score(dest_ip))
             print(f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} UDP, length {len(packet_length)}')
+            if args.file == 'no':
+                pass
+            elif args.file == 'json':
+                data = {
+                    'time':datetime.datetime.now().strftime("%H:%M:%S.%f"),
+                    'src_ip':src_ip,
+                    'src_port':src_port,
+                    'dest_ip':dest_ip,
+                    'dest_port':dest_port,
+                    'length':len(packet_length)
+                    }
+                write_file(data, args.file, args.name)
+            elif args.file == 'csv':
+                main_row += 1
+                data = [['time', 'src_ip', 'src_port', 'dest_ip', 'dest_port', 'length'], [datetime.datetime.now().strftime("%H:%M:%S.%f"), src_ip, src_port, dest_ip, dest_port, len(packet_length)]]
+                write_file(data, args.file, args.name, main_row)
+            else:
+                data = f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} UDP, length {len(packet_length)}'
+                write_file(data, args.file, args.name)
 
 
         elif protc == 'ICMP' and args.protocol.upper() == 'ICMP' or args.protocol == 'all':
@@ -57,13 +105,32 @@ def main():
             if args.abuse_check == True:
                 print(get_score(dest_ip))
             print(f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip} -> {dest_ip} ICMP {icmp_type}, length {len(icmp_length)}')
+            if args.file == 'no':
+                pass
+            elif args.file == 'json':
+                data = {
+                    'time':datetime.datetime.now().strftime("%H:%M:%S.%f"),
+                    'src_ip':src_ip,
+                    'dest_ip':dest_ip,
+                    'icmp_type':icmp_type,
+                    'length':len(icmp_length)
+                    }
+                write_file(data, args.file, args.name)
+            elif args.file == 'csv':
+                main_row += 1
+                data = [['time', 'src_ip','dest_ip', 'icmp_type', 'length'], [datetime.datetime.now().strftime("%H:%M:%S.%f"), src_ip, dest_ip, icmp_type, len(icmp_length)]]
+                write_file(data, args.file, args.name, main_row)
+            else:
+                data = f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip} -> {dest_ip} ICMP {icmp_type}, length {len(icmp_length)}'
+                write_file(data, args.file, args.name)
 
 
+# function that unpacks frames
 def unpack_frame(data):
     dest_mac, src_mac, = struct.unpack('!6s6s', data[:12])
     return f"{':'.join(f"{byte:02x}" for byte in dest_mac)}", f"{':'.join(f"{byte:02x}" for byte in src_mac)}", data[14:]
 
-
+# function that unpacks ip packets
 def unpack_packet(data):
     vers_headlen = data[0]
     version = vers_headlen >> 4
@@ -80,6 +147,7 @@ def unpack_packet(data):
         protc = f'Unkown: {protc}'
     return protc, socket.inet_ntoa(src_ip), socket.inet_ntoa(dest_ip), data[header_length:]
 
+# function that unpacks tcp packets
 def unpack_tcp(data):
     src_port, dest_port, seq_num, ack_num, head_flags, window_size = struct.unpack('!HHLLHH', data[:16])
     header_length = (head_flags >> 12) * 4
@@ -93,11 +161,12 @@ def unpack_tcp(data):
     flags_str = ', '.join(i for i in flags if flags[i] == 1)
     return src_port, dest_port, seq_num, ack_num, window_size, flags_str, data[header_length:]
 
+# function that unpacks udp packets
 def unpack_udp(data):
     src_port, dest_port, header_len = struct.unpack('!HHH', data[:6])
     return src_port, dest_port, header_len, data[8:]
 
-
+# function that unpacks icmp packets
 def unpack_icmp(data):
     icmp_type, icmp_code = struct.unpack('!BB', data[:2])
     icmp_type_3_codes = {
@@ -132,8 +201,7 @@ def unpack_icmp(data):
 
     return icmp_type, icmp_code, data[4:]
 
-
-
+# function that provides abuse rating for ip's
 def get_score(ip):
     if ipaddress.ip_address(ip).is_private:
         return 'Private IP'
@@ -154,6 +222,27 @@ def get_score(ip):
             return f"Error: HTTP {r.status_code}"
     except requests.RequestException:
         return "Request Failed"
+
+
+# function that writes to various file types
+def write_file(data, file_type, name_loc, check=None):
+    if not name_loc:
+        return
+    if file_type == 'json':
+        with open(name_loc, 'a') as file:
+            json.dump(data, file, indent=2)
+    elif file_type == 'csv':
+        with open(name_loc, 'a') as file:
+            writer = csv.writer(file)
+            if check < 2:
+                for row in data:
+                    writer.writerow(row)
+            else:
+                writer.writerow(data[1])
+    else:
+        with open(name_loc, 'a') as file:
+            file.write(data + '\n')
+
 
 
 if __name__ == "__main__":
