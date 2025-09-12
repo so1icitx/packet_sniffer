@@ -6,6 +6,7 @@ import datetime
 import argparse
 import json
 import csv
+import hexdump
 
 packets_received = 0
 main_row = 0
@@ -18,9 +19,9 @@ def main():
     parser.add_argument('-p', '--protocol', choices=['all', 'tcp', 'udp', 'icmp'], default='all')
     parser.add_argument('-i', '--interface',default='all')
     parser.add_argument('-f', '--file', choices=['csv', 'json', 'txt'], default='no')
-    parser.add_argument('-n', '--name', help='you can add paths example( -n /folder/tcp_01.json)')
-    # future idea cuz cant get it to work right now lol
-    # parser.add_argument('-X', '--hex-dump', action='store_true')
+    parser.add_argument('-n', '--name', help='you can also add paths example( -n /folder/tcp_01.json)')
+    parser.add_argument('-X', '--hex-dump', action='store_true', help='Display raw packets')
+    parser.add_argument('--quiet', action='store_true', help='Supress terminal output, use only if your writing to a file ofc')
     parser.add_argument('-a', '--abuse-check', action='store_true', help='Enable AbuseIPDB lookup for destination IP abuse score')
     args = parser.parse_args()
 
@@ -45,30 +46,62 @@ def main():
             packets_received += 1
             src_port, dest_port, seq_num, ack_num, window_size, flags, data = unpack_tcp(data)
             if args.abuse_check == True:
-                print(get_score(dest_ip))
-            print(f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} TCP Flags[{flags}], ack {ack_num}, win {window_size}, length {len(data)} ')
+                if not args.quiet:
+                    print(get_score(dest_ip))
+            if not args.quiet:
+                print(f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} TCP Flags[{flags}], ack {ack_num}, win {window_size}, length {len(data)} ')
+            if len(data) > 0 and args.hex_dump == True:
+                print()
+                hex = hexdump.hexdump(data[:len(data)], result='return')
+                if not args.quiet:
+                    print(hex)
+                    print()
+
             if args.file == 'no':
                 pass
             elif args.file == 'json':
-                data = {
-                    'time':datetime.datetime.now().strftime("%H:%M:%S.%f"),
-                    'src_ip':src_ip,
-                    'src_port':src_port,
-                    'dest_ip':dest_ip,
-                    'dest_port':dest_port,
-                    'flags':flags,
-                    'ack_number':ack_num,
-                    'window_size':window_size,
-                    'length':len(data)
-                    }
+                if args.hex_dump == True and len(data) > 1:
+                    data = {
+                        'time':datetime.datetime.now().strftime("%H:%M:%S.%f"),
+                        'src_ip':src_ip,
+                        'src_port':src_port,
+                        'dest_ip':dest_ip,
+                        'dest_port':dest_port,
+                        'flags':flags,
+                        'ack_number':ack_num,
+                        'window_size':window_size,
+                        'length':len(data),
+                        'hex':hex
+                        }
+                else:
+                    data = {
+                        'time':datetime.datetime.now().strftime("%H:%M:%S.%f"),
+                        'src_ip':src_ip,
+                        'src_port':src_port,
+                        'dest_ip':dest_ip,
+                        'dest_port':dest_port,
+                        'flags':flags,
+                        'ack_number':ack_num,
+                        'window_size':window_size,
+                        'length':len(data)
+                        }
+
+
                 write_file(data, args.file, args.name)
 
             elif args.file == 'csv':
                 main_row += 1
-                data = [['time', 'src_ip', 'src_port', 'dest_ip', 'dest_port', 'flags', 'ack_num', 'win_size', 'length'], [datetime.datetime.now().strftime("%H:%M:%S.%f"), src_ip, src_port, dest_ip, dest_port, flags, ack_num, window_size, len(data)]]
+                if args.hex_dump == True and len(data) > 1:
+                    data = [['time', 'src_ip', 'src_port', 'dest_ip', 'dest_port', 'flags', 'ack_num', 'win_size', 'length', 'hex'], [datetime.datetime.now().strftime("%H:%M:%S.%f"), src_ip, src_port, dest_ip, dest_port, flags, ack_num, window_size, len(data), hex]]
+                else:
+                    data = [['time', 'src_ip', 'src_port', 'dest_ip', 'dest_port', 'flags', 'ack_num', 'win_size', 'length'], [datetime.datetime.now().strftime("%H:%M:%S.%f"), src_ip, src_port, dest_ip, dest_port, flags, ack_num, window_size, len(data)]]
+
                 write_file(data, args.file, args.name, main_row)
             else:
-                data = f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} TCP Flags[{flags}], ack {ack_num}, win {window_size}, length {len(data)}'
+                if args.hex_dump == True and len(data) > 1:
+                    data = f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} TCP Flags[{flags}], ack {ack_num}, win {window_size}, length {len(data)}\n{hex}\n'
+                else:
+                    data = f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} TCP Flags[{flags}], ack {ack_num}, win {window_size}, length {len(data)}'
                 write_file(data, args.file, args.name)
 
 
@@ -76,12 +109,33 @@ def main():
             packets_received += 1
             src_port, dest_port, header_length, packet_length = unpack_udp(data)
             if args.abuse_check == True:
-                print(get_score(dest_ip))
-            print(f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} UDP, length {len(packet_length)}')
+                if not args.quiet:
+                    print(get_score(dest_ip))
+            if not args.quiet:
+                print(f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} UDP, length {len(packet_length)}')
+
+            if len(packet_length) > 0 and args.hex_dump == True:
+                print()
+                hex = hexdump.hexdump(data[:len(packet_length)], result='return')
+                if not args.quiet:
+                    print(hex)
+                    print()
+
             if args.file == 'no':
                 pass
             elif args.file == 'json':
-                data = {
+                if args.hex_dump == True and len(data) > 1:
+                    data = {
+                        'time':datetime.datetime.now().strftime("%H:%M:%S.%f"),
+                        'src_ip':src_ip,
+                        'src_port':src_port,
+                        'dest_ip':dest_ip,
+                        'dest_port':dest_port,
+                        'length':len(packet_length),
+                        'hex':hex
+                        }
+                else:
+                    data = {
                     'time':datetime.datetime.now().strftime("%H:%M:%S.%f"),
                     'src_ip':src_ip,
                     'src_port':src_port,
@@ -90,12 +144,19 @@ def main():
                     'length':len(packet_length)
                     }
                 write_file(data, args.file, args.name)
+
             elif args.file == 'csv':
                 main_row += 1
-                data = [['time', 'src_ip', 'src_port', 'dest_ip', 'dest_port', 'length'], [datetime.datetime.now().strftime("%H:%M:%S.%f"), src_ip, src_port, dest_ip, dest_port, len(packet_length)]]
+                if args.hex_dump == True and len(data) > 1:
+                    data = [['time', 'src_ip', 'src_port', 'dest_ip', 'dest_port', 'length', 'hex'], [datetime.datetime.now().strftime("%H:%M:%S.%f"), src_ip, src_port, dest_ip, dest_port, len(packet_length), hex]]
+                else:
+                    data = [['time', 'src_ip', 'src_port', 'dest_ip', 'dest_port', 'length'], [datetime.datetime.now().strftime("%H:%M:%S.%f"), src_ip, src_port, dest_ip, dest_port, len(packet_length)]]
                 write_file(data, args.file, args.name, main_row)
             else:
-                data = f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} UDP, length {len(packet_length)}'
+                if args.hex_dump == True and len(data) > 1:
+                    data = f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} UDP, length {len(packet_length)}\n{hex}\n'
+                else:
+                    data = f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip}:{src_port} -> {dest_ip}:{dest_port} UDP, length {len(packet_length)}'
                 write_file(data, args.file, args.name)
 
 
@@ -103,8 +164,10 @@ def main():
             packets_received += 1
             icmp_type, icmp_code, icmp_length = unpack_icmp(data)
             if args.abuse_check == True:
-                print(get_score(dest_ip))
-            print(f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip} -> {dest_ip} ICMP {icmp_type}, length {len(icmp_length)}')
+                if not args.quiet:
+                    print(get_score(dest_ip))
+            if not args.quiet:
+                print(f'{datetime.datetime.now().strftime("%H:%M:%S.%f")} IP {src_ip} -> {dest_ip} ICMP {icmp_type}, length {len(icmp_length)}')
             if args.file == 'no':
                 pass
             elif args.file == 'json':
@@ -225,14 +288,14 @@ def get_score(ip):
 
 
 # function that writes to various file types
-def write_file(data, file_type, name_loc, check=None):
-    if not name_loc:
+def write_file(data, file_type, output_file, check=None):
+    if not output_file:
         return
     if file_type == 'json':
-        with open(name_loc, 'a') as file:
+        with open(output_file, 'a') as file:
             json.dump(data, file, indent=2)
     elif file_type == 'csv':
-        with open(name_loc, 'a') as file:
+        with open(output_file, 'a') as file:
             writer = csv.writer(file)
             if check < 2:
                 for row in data:
@@ -240,7 +303,7 @@ def write_file(data, file_type, name_loc, check=None):
             else:
                 writer.writerow(data[1])
     else:
-        with open(name_loc, 'a') as file:
+        with open(output_file, 'a') as file:
             file.write(data + '\n')
 
 
